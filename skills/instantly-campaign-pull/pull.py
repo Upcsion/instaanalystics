@@ -15,13 +15,13 @@ sandboxed environments block this host by egress policy -- if every
 request fails with a connection/tunnel error rather than an HTTP error
 from Instantly itself, that's a network policy problem, not a script bug.
 
-NOTE: the "Step 1 (Yesterday)" / "Step 1 (2 days ago)" / "Sent Yesterday"
-columns are all populated from the same `new_leads_contacted` field on the
-daily analytics endpoint (see SKILL.md's closing note). This was written
-without a live API response to verify the exact response shape, since
-network access wasn't available at write time -- `daily_new_contacted()`
-below parses defensively (list or dict-wrapped) but double check the real
-shape the first time this runs and adjust if needed.
+Verified live 2026-09-03: the daily analytics endpoint returns a bare
+JSON list of per-day rows (not dict-wrapped), each with a `new_leads_contacted`
+field (first-touch leads) distinct from a `sent` field (all sends that day,
+including step 2+ resends). "Step 1 (Yesterday)" / "Step 1 (2 days ago)"
+use `new_leads_contacted`; "Sent Yesterday" uses `sent`. `daily_analytics()`
+below still parses defensively for a dict-wrapped shape in case that varies
+by account/plan.
 """
 import argparse
 import csv
@@ -82,11 +82,9 @@ def campaigns():
             return out
 
 
-def daily_new_contacted(cid, day):
-    """New leads contacted on `day`, from the date-respecting daily endpoint.
-
-    Defensive about response shape since this wasn't verified live -- see
-    module docstring.
+def daily_analytics(cid, day):
+    """(new_leads_contacted, sent) totals for `day`, from the date-respecting
+    daily endpoint. See module docstring for the verified response shape.
     """
     ds = day.isoformat()
     d = req("GET", f"/api/v2/campaigns/analytics/daily?campaign_id={cid}"
@@ -94,7 +92,10 @@ def daily_new_contacted(cid, day):
     items = d if isinstance(d, list) else d.get("items", d.get("data", []))
     if isinstance(items, dict):
         items = [items]
-    return sum((row.get("new_leads_contacted", 0) or 0) for row in (items or []))
+    items = items or []
+    new_contacted = sum((row.get("new_leads_contacted", 0) or 0) for row in items)
+    sent = sum((row.get("sent", 0) or 0) for row in items)
+    return new_contacted, sent
 
 
 def work(i):
@@ -131,8 +132,8 @@ def work(i):
             break
 
     cap = d.get("daily_limit") or 0
-    step1_yesterday = daily_new_contacted(cid, YESTERDAY)
-    step1_2d_ago = daily_new_contacted(cid, TWO_DAYS_AGO)
+    step1_yesterday, sent_yesterday = daily_analytics(cid, YESTERDAY)
+    step1_2d_ago, _ = daily_analytics(cid, TWO_DAYS_AGO)
 
     return dict(
         name=i["name"].strip(),
@@ -149,7 +150,7 @@ def work(i):
         step2_tom=tom,
         sendable=nc + due,
         maxusers=min(nc + due, cap or 10**9) // 15,
-        sent_yesterday=step1_yesterday,
+        sent_yesterday=sent_yesterday,
     )
 
 

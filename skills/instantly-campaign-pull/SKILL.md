@@ -76,4 +76,4 @@ Include every campaign, including zero-lead ones, so row positions stay stable b
 
 ## Note on "Step 1 (Yesterday/2 days ago)" vs "Sent Yesterday"
 
-The source spec lists both a "Step 1 (Yesterday)" column and a separate "Sent Yesterday" reference column, but only documents one field (`new_leads_contacted` from the daily analytics endpoint) for computing them. `pull.py` currently populates all three "yesterday" figures from that single field. If the live API turns out to expose a distinct total-sends field on the daily endpoint, split `sent_yesterday` out from `step1_yesterday` in `pull.py` accordingly — this was not verified against a live response before being committed (see `pull.py` header comment).
+Verified against a live response: the daily analytics endpoint returns a bare JSON list of per-day rows, each with a `new_leads_contacted` field (first-touch leads that day) distinct from a `sent` field (all sends that day, including step 2+ resends). "Step 1 (Yesterday)" and "Step 1 (2 days ago)" use `new_leads_contacted`; "Sent Yesterday" uses `sent`. `pull.py`'s `daily_analytics()` returns both.
