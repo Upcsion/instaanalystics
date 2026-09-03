@@ -51,7 +51,8 @@ def req(method, path, body=None, tries=5):
     data = json.dumps(body).encode() if body is not None else None
     for attempt in range(tries):
         r = urllib.request.Request(BASE + path, data=data, method=method)
-        r.add_header("Authorization", "Bearer " + KEY)
+        if KEY:  # otherwise rely on an environment-level API credential to attach it
+            r.add_header("Authorization", "Bearer " + KEY)
         r.add_header("User-Agent", UA)
         if data is not None:
             r.add_header("Content-Type", "application/json")
@@ -180,9 +181,17 @@ def main():
     args = ap.parse_args()
 
     if not KEY:
-        sys.exit("IK environment variable is not set -- export your Instantly API key as IK first.")
+        print("IK is not set -- assuming the Instantly API key is attached via an "
+              "environment-level API credential instead.", file=sys.stderr)
 
-    items = campaigns()
+    try:
+        items = campaigns()
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            sys.exit("Instantly rejected the request (HTTP %d) -- set IK to your API key, "
+                      "or add it as an API credential for api.instantly.ai on this "
+                      "environment." % e.code)
+        raise
     if not items:
         sys.exit("No campaigns returned -- check the API key and network access to api.instantly.ai.")
 

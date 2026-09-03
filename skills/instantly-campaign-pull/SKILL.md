@@ -39,6 +39,8 @@ Two non-obvious requirements:
 
 The API key lives in the `IK` environment variable. Base URL `https://api.instantly.ai`.
 
+Running in a Claude Code cloud environment (claude.ai/code) instead of a terminal with `IK` exported: add the key as an environment-level **API credential** for host `api.instantly.ai` (Bearer type, `Authorization` header) instead. That both grants network access to the host and attaches the key to matching requests outside the sandbox, so the key never appears in the session, its environment variables, or any file. `pull.py` only sets the `Authorization` header itself when `IK` is present, so it works either way.
+
 ## The formulas
 
 - Sendable today = not yet contacted + step 2 due today
