@@ -14,6 +14,10 @@ export IK=<instantly api key>
 python3 pull.py --csv output.csv
 ```
 
+## Google Sheets version
+
+`InstantlyPull.gs` in this folder is a Google Apps Script port of the same logic (same traps, same 15-column output), for pulling straight into a sheet instead of a CSV. It's meant to be pasted into a spreadsheet's Extensions -> Apps Script editor, writes to an `INSTA-PULL` tab (created if missing), and adds an "Instantly" menu (Pull Instantly Data / Set API Key...) that a drawing/button can also be assigned to. Setup steps are in the file's header comment. It stores the API key in that script's Script Properties -- Apps Script runs on Google's servers, not in this repo's sandbox, so it can't see the `IK` env var or an environment-level API credential.
+
 ## Before anything else: the four traps
 
 These are the mistakes that produce confident wrong numbers. All four were hit in production.
