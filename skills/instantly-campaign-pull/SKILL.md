@@ -14,6 +14,10 @@ export IK=<instantly api key>
 python3 pull.py --csv output.csv
 ```
 
+## Google Sheets version
+
+`InstantlyPull.gs` in this folder is a Google Apps Script port of the same logic (same traps, same 15-column output), for pulling straight into a sheet instead of a CSV. It's meant to be pasted into a spreadsheet's Extensions -> Apps Script editor, writes to an `INSTA-PULL` tab (created if missing), and adds an "Instantly" menu (Pull Instantly Data / Set API Key...) that a drawing/button can also be assigned to. Setup steps are in the file's header comment. It stores the API key in that script's Script Properties -- Apps Script runs on Google's servers, not in this repo's sandbox, so it can't see the `IK` env var or an environment-level API credential.
+
 ## Before anything else: the four traps
 
 These are the mistakes that produce confident wrong numbers. All four were hit in production.
@@ -76,4 +80,4 @@ Include every campaign, including zero-lead ones, so row positions stay stable b
 
 ## Note on "Step 1 (Yesterday/2 days ago)" vs "Sent Yesterday"
 
-The source spec lists both a "Step 1 (Yesterday)" column and a separate "Sent Yesterday" reference column, but only documents one field (`new_leads_contacted` from the daily analytics endpoint) for computing them. `pull.py` currently populates all three "yesterday" figures from that single field. If the live API turns out to expose a distinct total-sends field on the daily endpoint, split `sent_yesterday` out from `step1_yesterday` in `pull.py` accordingly — this was not verified against a live response before being committed (see `pull.py` header comment).
+Verified against a live response: the daily analytics endpoint returns a bare JSON list of per-day rows, each with a `new_leads_contacted` field (first-touch leads that day) distinct from a `sent` field (all sends that day, including step 2+ resends). "Step 1 (Yesterday)" and "Step 1 (2 days ago)" use `new_leads_contacted`; "Sent Yesterday" uses `sent`. `pull.py`'s `daily_analytics()` returns both.
