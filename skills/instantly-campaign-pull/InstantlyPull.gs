@@ -6,20 +6,37 @@
  * (created automatically if missing), in the same column order pull.py's
  * CSV uses.
  *
- * SETUP
- *   1. Open this spreadsheet -> Extensions -> Apps Script.
- *   2. Delete any starter code in Code.gs and paste this whole file in.
- *   3. Save (the disk icon), then reload the spreadsheet tab.
- *   4. An "Instantly" menu appears next to Help. Click
- *      Instantly -> Set API Key... and paste your Instantly API key.
- *      It's stored in this script's Script Properties, not in any cell,
- *      so it isn't visible to anyone who can only view/edit the sheet.
+ * SETUP -- adding this to a project that already has other .gs code:
+ *   Apps Script merges every file in a project into one shared global
+ *   scope, so this file is written to be safe to drop in alongside
+ *   existing code: every top-level name below is prefixed `Insta` /
+ *   `Insta_`, and the entry point is `Insta_onOpen()` -- a plain helper,
+ *   NOT the magic `onOpen()` trigger -- so it will never silently
+ *   replace an onOpen() you already have.
+ *   1. Open the spreadsheet -> Extensions -> Apps Script.
+ *   2. Click the + next to "Files" -> Script, name it InstantlyPull,
+ *      and paste this whole file into that new file (leave your
+ *      existing file(s) untouched).
+ *   3. Save. Then wire up the menu -- pick ONE:
+ *        a) No existing onOpen(): add a new file with just
+ *             function onOpen() { Insta_onOpen(); }
+ *        b) You already have an onOpen(): add one line to it:
+ *             Insta_onOpen();
+ *      (If you'd rather skip the menu entirely and only use a button,
+ *      skip this step -- go straight to step 6.)
+ *   4. Reload the spreadsheet tab. An "Instantly" menu appears next to
+ *      Help. Click Instantly -> Set API Key... and paste your Instantly
+ *      API key. It's stored in this script's Script Properties, not in
+ *      any cell, so it isn't visible to anyone who can only view/edit
+ *      the sheet.
  *   5. Click Instantly -> Pull Instantly Data once to authorize the
  *      script (Google will ask you to approve it -- this is expected for
  *      any script that calls an external API).
- *   6. Optional button: Insert -> Drawing, draw/label a button, click
- *      Save and Close, then click the image once -> the 3-dot menu in
- *      its corner -> Assign script -> type: pullInstantlyData
+ *   6. Optional/alternative button: Insert -> Drawing, draw/label a
+ *      button, click Save and Close, then click the image once -> the
+ *      3-dot menu in its corner -> Assign script -> type: Insta_pull
+ *      (this works whether or not you did step 3 -- the button calls
+ *      the pull function directly, no menu needed)
  *
  * This runs on Google's servers, not in any Claude Code sandbox, so it
  * needs its own copy of the API key (Script Properties above) -- it
@@ -39,18 +56,18 @@
  *      sends that day, incl. step 2+) fields.
  */
 
-var BASE = 'https://api.instantly.ai';
-var UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)';
-var SHEET_NAME = 'INSTA-PULL';
-var API_KEY_PROP = 'INSTANTLY_API_KEY';
+var INSTA_BASE = 'https://api.instantly.ai';
+var INSTA_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)';
+var INSTA_SHEET_NAME = 'INSTA-PULL';
+var INSTA_API_KEY_PROP = 'INSTANTLY_API_KEY';
 
-var STATUS_NAMES = {
+var INSTA_STATUS_NAMES = {
   1: 'ACTIVE', 2: 'PAUSED', 3: 'COMPLETED', 0: 'DRAFT',
   4: 'SUBSEQUENCES'
 };
-STATUS_NAMES[-1] = 'ACCOUNTS UNHEALTHY';
+INSTA_STATUS_NAMES[-1] = 'ACCOUNTS UNHEALTHY';
 
-var HEADER = [
+var INSTA_HEADER = [
   'Campaign Name', 'Leads Loaded', 'Contacted', 'Not Yet Contacted',
   'Step 1 (Yesterday)', 'Step 1 (2 days ago)',
   'Status', 'Daily Cap', 'Send Window', 'Step Wait',
@@ -62,15 +79,15 @@ var HEADER = [
 // Menu / button entry points
 // ---------------------------------------------------------------------
 
-function onOpen() {
+function Insta_onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Instantly')
-    .addItem('Pull Instantly Data', 'pullInstantlyData')
-    .addItem('Set API Key...', 'promptForApiKey_')
+    .addItem('Pull Instantly Data', 'Insta_pull')
+    .addItem('Set API Key...', 'Insta_promptForApiKey_')
     .addToUi();
 }
 
-function promptForApiKey_() {
+function Insta_promptForApiKey_() {
   var ui = SpreadsheetApp.getUi();
   var resp = ui.prompt(
     'Instantly API Key',
@@ -81,35 +98,35 @@ function promptForApiKey_() {
   if (resp.getSelectedButton() === ui.Button.OK) {
     var key = resp.getResponseText().trim();
     if (key) {
-      PropertiesService.getScriptProperties().setProperty(API_KEY_PROP, key);
+      PropertiesService.getScriptProperties().setProperty(INSTA_API_KEY_PROP, key);
       ui.alert('Saved.');
     }
   }
 }
 
 /** Entry point for the menu item and for a drawing/button assigned to it. */
-function pullInstantlyData() {
+function Insta_pull() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName(SHEET_NAME) || ss.insertSheet(SHEET_NAME);
+  var sheet = ss.getSheetByName(INSTA_SHEET_NAME) || ss.insertSheet(INSTA_SHEET_NAME);
 
   sheet.getRange(1, 1).setValue('Pulling from Instantly...').setFontStyle('italic').setFontColor(null);
   SpreadsheetApp.flush();
 
   try {
-    var key = getApiKey_();
-    var campaigns = fetchAllCampaigns_(key);
+    var key = Insta_getApiKey_();
+    var campaigns = Insta_fetchAllCampaigns_(key);
     if (!campaigns.length) {
       throw new Error('No campaigns returned -- check the API key and Instantly account.');
     }
 
-    var rows = fetchCampaignRows_(key, campaigns);
+    var rows = Insta_fetchCampaignRows_(key, campaigns);
     rows.sort(function (a, b) {
       return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
     });
 
-    writeSheet_(sheet, rows);
+    Insta_writeSheet_(sheet, rows);
 
-    var warnings = sanityCheck_(rows);
+    var warnings = Insta_sanityCheck_(rows);
     var stamp = 'Last pulled: ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss z') +
       '  (' + rows.length + ' campaigns' + (warnings.length ? ', ' + warnings.length + ' warning(s) below' : '') + ')';
     sheet.getRange(1, 1).setValue(stamp).setFontStyle('italic');
@@ -128,8 +145,8 @@ function pullInstantlyData() {
 // API key
 // ---------------------------------------------------------------------
 
-function getApiKey_() {
-  var key = PropertiesService.getScriptProperties().getProperty(API_KEY_PROP);
+function Insta_getApiKey_() {
+  var key = PropertiesService.getScriptProperties().getProperty(INSTA_API_KEY_PROP);
   if (!key) {
     throw new Error('No Instantly API key set. Use Instantly -> Set API Key... first.');
   }
@@ -140,11 +157,11 @@ function getApiKey_() {
 // HTTP helpers
 // ---------------------------------------------------------------------
 
-function buildRequest_(key, call) {
+function Insta_buildRequest_(key, call) {
   var opt = {
-    url: BASE + call.path,
+    url: INSTA_BASE + call.path,
     method: call.method,
-    headers: { Authorization: 'Bearer ' + key, 'User-Agent': UA },
+    headers: { Authorization: 'Bearer ' + key, 'User-Agent': INSTA_UA },
     muteHttpExceptions: true
   };
   if (call.body !== undefined) {
@@ -161,7 +178,7 @@ function buildRequest_(key, call) {
  * non-retryable HTTP error aborts -- a flaky response is retried, never
  * silently treated as "done".
  */
-function batchFetch_(key, calls) {
+function Insta_batchFetch_(key, calls) {
   var CHUNK = 50;
   var MAX_TRIES = 5;
   var pending = calls.map(function (c, idx) {
@@ -175,7 +192,7 @@ function batchFetch_(key, calls) {
 
     for (var i = 0; i < pending.length; i += CHUNK) {
       var chunk = pending.slice(i, i + CHUNK);
-      var requests = chunk.map(function (p) { return buildRequest_(key, p); });
+      var requests = chunk.map(function (p) { return Insta_buildRequest_(key, p); });
       var responses;
       try {
         responses = UrlFetchApp.fetchAll(requests);
@@ -221,11 +238,11 @@ function batchFetch_(key, calls) {
 // Instantly API
 // ---------------------------------------------------------------------
 
-function fetchAllCampaigns_(key) {
+function Insta_fetchAllCampaigns_(key) {
   var out = [], sa = null;
   while (true) {
     var path = '/api/v2/campaigns?limit=100' + (sa ? '&starting_after=' + sa : '');
-    var d = batchFetch_(key, [{ method: 'get', path: path }])[0];
+    var d = Insta_batchFetch_(key, [{ method: 'get', path: path }])[0];
     (d.items || []).forEach(function (i) {
       out.push({ id: i.id, name: i.name, status: i.status });
     });
@@ -234,14 +251,14 @@ function fetchAllCampaigns_(key) {
   }
 }
 
-function dailyPath_(cid, dayUTC) {
+function Insta_dailyPath_(cid, dayUTC) {
   var ds = Utilities.formatDate(dayUTC, 'UTC', 'yyyy-MM-dd');
   return '/api/v2/campaigns/analytics/daily?campaign_id=' + cid +
     '&start_date=' + ds + '&end_date=' + ds;
 }
 
 /** {newContacted, sent} for one day -- see header comment, trap 5. */
-function parseDailyAnalytics_(d) {
+function Insta_parseDailyAnalytics_(d) {
   var items = Array.isArray(d) ? d : (d.items || d.data || []);
   if (items && !Array.isArray(items)) items = [items];
   items = items || [];
@@ -253,7 +270,7 @@ function parseDailyAnalytics_(d) {
   return { newContacted: newContacted, sent: sent };
 }
 
-function addDaysUTC_(dateUTC, n) {
+function Insta_addDaysUTC_(dateUTC, n) {
   var d = new Date(dateUTC.getTime());
   d.setUTCDate(d.getUTCDate() + n);
   return d;
@@ -263,17 +280,17 @@ function addDaysUTC_(dateUTC, n) {
  * For every campaign: campaign details (delays/cap/window), full
  * leads/list pagination (contacted / not-contacted / step-2-due), and
  * two days of daily analytics -- all batched across campaigns via
- * batchFetch_ so 185 campaigns finish in a handful of network round
+ * Insta_batchFetch_ so 185 campaigns finish in a handful of network round
  * trips instead of hundreds of sequential ones.
  */
-function fetchCampaignRows_(key, campaigns) {
+function Insta_fetchCampaignRows_(key, campaigns) {
   var now = new Date();
   var todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  var yesterdayUTC = addDaysUTC_(todayUTC, -1);
-  var twoDaysAgoUTC = addDaysUTC_(todayUTC, -2);
+  var yesterdayUTC = Insta_addDaysUTC_(todayUTC, -1);
+  var twoDaysAgoUTC = Insta_addDaysUTC_(todayUTC, -2);
 
   // 1. Campaign details (parallel).
-  var details = batchFetch_(key, campaigns.map(function (c) {
+  var details = Insta_batchFetch_(key, campaigns.map(function (c) {
     return { method: 'get', path: '/api/v2/campaigns/' + c.id };
   }));
   var meta = {};
@@ -310,7 +327,7 @@ function fetchCampaignRows_(key, campaigns) {
       if (leadState[id].sa) body.starting_after = leadState[id].sa;
       return { method: 'post', path: '/api/v2/leads/list', body: body };
     });
-    var results = batchFetch_(key, calls);
+    var results = Insta_batchFetch_(key, calls);
     var next = [];
     pending.forEach(function (id, idx) {
       var rr = results[idx];
@@ -342,21 +359,21 @@ function fetchCampaignRows_(key, campaigns) {
   // 3. Daily analytics for yesterday + two days ago (parallel).
   var dailyCalls = [];
   campaigns.forEach(function (c) {
-    dailyCalls.push({ method: 'get', path: dailyPath_(c.id, yesterdayUTC) });
-    dailyCalls.push({ method: 'get', path: dailyPath_(c.id, twoDaysAgoUTC) });
+    dailyCalls.push({ method: 'get', path: Insta_dailyPath_(c.id, yesterdayUTC) });
+    dailyCalls.push({ method: 'get', path: Insta_dailyPath_(c.id, twoDaysAgoUTC) });
   });
-  var dailyResults = batchFetch_(key, dailyCalls);
+  var dailyResults = Insta_batchFetch_(key, dailyCalls);
 
   return campaigns.map(function (c, idx) {
-    var y = parseDailyAnalytics_(dailyResults[idx * 2]);
-    var t2 = parseDailyAnalytics_(dailyResults[idx * 2 + 1]);
+    var y = Insta_parseDailyAnalytics_(dailyResults[idx * 2]);
+    var t2 = Insta_parseDailyAnalytics_(dailyResults[idx * 2 + 1]);
     var st = leadState[c.id];
     var m = meta[c.id];
     var leads = st.nc + st.ct;
     var sendable = st.nc + st.due;
     return {
       name: (c.name || '').trim(),
-      status: STATUS_NAMES[c.status] !== undefined ? STATUS_NAMES[c.status] : String(c.status),
+      status: INSTA_STATUS_NAMES[c.status] !== undefined ? INSTA_STATUS_NAMES[c.status] : String(c.status),
       limit: m.cap,
       window: m.window,
       wait: m.wait,
@@ -378,7 +395,7 @@ function fetchCampaignRows_(key, campaigns) {
 // Sheet output
 // ---------------------------------------------------------------------
 
-function rowValues_(r) {
+function Insta_rowValues_(r) {
   return [
     r.name, r.leads, r.contacted, r.notyet,
     r.step1_yesterday, r.step1_2d_ago,
@@ -388,18 +405,18 @@ function rowValues_(r) {
   ];
 }
 
-function writeSheet_(sheet, rows) {
+function Insta_writeSheet_(sheet, rows) {
   sheet.clearContents();
-  sheet.getRange(2, 1, 1, HEADER.length).setValues([HEADER]).setFontWeight('bold');
+  sheet.getRange(2, 1, 1, INSTA_HEADER.length).setValues([INSTA_HEADER]).setFontWeight('bold');
   if (!rows.length) return;
-  var values = rows.map(rowValues_);
-  sheet.getRange(3, 1, values.length, HEADER.length).setValues(values);
+  var values = rows.map(Insta_rowValues_);
+  sheet.getRange(3, 1, values.length, INSTA_HEADER.length).setValues(values);
   sheet.setFrozenRows(2);
-  sheet.autoResizeColumns(1, HEADER.length);
+  sheet.autoResizeColumns(1, INSTA_HEADER.length);
 }
 
 /** Same checks as pull.py's warnings. */
-function sanityCheck_(rows) {
+function Insta_sanityCheck_(rows) {
   var warnings = [];
   rows.forEach(function (r) {
     if (r.contacted + r.notyet !== r.leads) {
